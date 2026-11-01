@@ -6,7 +6,7 @@ use git_koi::history::LanguageColor;
 use git_koi::koi::{KoiDevelopment, RecentActivity, StreakDevelopment};
 use git_koi::motion::frame_count;
 use git_koi::output::encode_gif;
-use git_koi::render::render_swim_frame;
+use git_koi::render::{render_swim_frame, KoiFrame};
 
 fn main() {
     // (name, share, color) -- edit these to recolor the fish
@@ -34,6 +34,23 @@ fn main() {
             observation_week_contributions: vec![],
         },
     };
+    // Both koi on one canvas, half a lap apart, swimming the same circle.
+    let b = Behavior::Cruise;
+    let n = frame_count(b);
+    let pair: Vec<_> = (0..n)
+        .map(|i| {
+            let white = render_swim_frame(&development, KoiBody::White, b, i);
+            let asagi = render_swim_frame(&development, KoiBody::Asagi, b, i + n / 2);
+            let mut px = white.as_rgba_bytes().to_vec();
+            for (dst, src) in px.chunks_mut(4).zip(asagi.as_rgba_bytes().chunks(4)) {
+                if src[3] != 0 {
+                    dst.copy_from_slice(src);
+                }
+            }
+            KoiFrame::from_rgba_pixels(px.chunks(4).map(|c| [c[0], c[1], c[2], c[3]]).collect())
+        })
+        .collect();
+    std::fs::write("koi-pair.gif", encode_gif(&pair).unwrap()).unwrap();
     for (name, body) in [("white", KoiBody::White), ("asagi", KoiBody::Asagi)] {
         let b = Behavior::Cruise;
         let frames: Vec<_> = (0..frame_count(b))

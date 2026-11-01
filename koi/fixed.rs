@@ -14,6 +14,8 @@ struct Ripple {
     start: usize,
     life: usize,
     max_radius: f64,
+    /// Splash droplets as (sideways, upward) speed in pixels per frame.
+    drops: Vec<(f64, f64)>,
 }
 
 fn main() {
@@ -68,10 +70,15 @@ fn main() {
             start: (k * n / RIPPLE_COUNT + rand(0.0, 6.0) as usize) % n,
             life: rand(22.0, 40.0) as usize,
             max_radius: rand(9.0, 30.0),
+            drops: (0..rand(3.0, 6.0) as usize)
+                .map(|_| (rand(-1.6, 1.6), rand(1.2, 2.6)))
+                .collect(),
         })
         .collect();
 
     let ripple_color = [127u8, 183, 230, 255];
+    let faint_color = [178u8, 213, 240, 255];
+    let drop_color = [96u8, 160, 222, 255];
     let frames: Vec<KoiFrame> = (0..n)
         .map(|i| {
             let mut px = base[i].clone();
@@ -80,33 +87,79 @@ fn main() {
                 if age >= ripple.life {
                     continue;
                 }
-                let t = age as f64 / ripple.life as f64;
-                // fast at first, then slowing as it spreads
-                let radius = 1.0 + ripple.max_radius * (1.0 - (1.0 - t) * (1.0 - t));
-                // the first half stays solid, then it thins to a dither and vanishes
-                let density = if t < 0.5 { 0 } else if t < 0.75 { 1 } else { 2 };
-                let r = radius.ceil() as i32 + 1;
-                for dy in -r..=r {
-                    for dx in -r..=r {
-                        let (x, y) = (ripple.x + dx, ripple.y + dy);
-                        if x < 0 || y < 0 || x >= side as i32 || y >= side as i32 {
-                            continue;
+                // Ring 0 is the main ripple. Rings 1 and 2 start a few frames later,
+                // smaller and fainter, like the inner waves of a real ripple.
+                for ring in 0..3usize {
+                    let delay = ring * 5;
+                    if age < delay {
+                        continue;
+                    }
+                    let ring_age = age - delay;
+                    let ring_life = ripple.life - delay.min(ripple.life - 4);
+                    if ring_age >= ring_life {
+                        continue;
+                    }
+                    let t = ring_age as f64 / ring_life as f64;
+                    let reach = ripple.max_radius * (1.0 - 0.3 * ring as f64);
+                    // fast at first, then slowing as it spreads
+                    let radius = 1.0 + reach * (1.0 - (1.0 - t) * (1.0 - t));
+                    // main ring: solid, then thinning; inner rings: always dithered
+                    let density = if ring > 0 {
+                        if t < 0.5 { 1 } else { 2 }
+                    } else if t < 0.5 {
+                        0
+                    } else if t < 0.75 {
+                        1
+                    } else {
+                        2
+                    };
+                    let color = if ring == 0 { ripple_color } else { faint_color };
+                    let r = radius.ceil() as i32 + 1;
+                    for dy in -r..=r {
+                        for dx in -r..=r {
+                            let (x, y) = (ripple.x + dx, ripple.y + dy);
+                            if x < 0 || y < 0 || x >= side as i32 || y >= side as i32 {
+                                continue;
+                            }
+                            let dist = ((dx * dx + dy * dy) as f64).sqrt();
+                            if (dist - radius).abs() > 0.55 {
+                                continue;
+                            }
+                            let keep = match density {
+                                0 => true,
+                                1 => (x + y) % 2 == 0,
+                                _ => (x % 2 == 0) && (y % 2 == 0),
+                            };
+                            if !keep {
+                                continue;
+                            }
+                            let k = (y as usize * side + x as usize) * 4;
+                            if px[k + 3] == 0 {
+                                px[k..k + 4].copy_from_slice(&color);
+                            }
                         }
-                        let dist = ((dx * dx + dy * dy) as f64).sqrt();
-                        if (dist - radius).abs() > 0.55 {
-                            continue;
-                        }
-                        let keep = match density {
-                            0 => true,
-                            1 => (x + y) % 2 == 0,
-                            _ => (x % 2 == 0) && (y % 2 == 0),
-                        };
-                        if !keep {
-                            continue;
-                        }
-                        let k = (y as usize * side + x as usize) * 4;
-                        if px[k + 3] == 0 {
-                            px[k..k + 4].copy_from_slice(&ripple_color);
+                    }
+                }
+                // Splash: droplets fly up and out from the center, then fall back.
+                const SPLASH_FRAMES: usize = 10;
+                if age < SPLASH_FRAMES {
+                    let a = age as f64;
+                    for &(vx, vy) in &ripple.drops {
+                        let x = ripple.x + (vx * a).round() as i32;
+                        let y = ripple.y - (vy * a - 0.22 * a * a).round() as i32;
+                        // droplets shrink from 2x2 to a single pixel near the end
+                        let size = if age < SPLASH_FRAMES - 3 { 2 } else { 1 };
+                        for oy in 0..size {
+                            for ox in 0..size {
+                                let (x, y) = (x + ox, y + oy);
+                                if x < 0 || y < 0 || x >= side as i32 || y >= side as i32 {
+                                    continue;
+                                }
+                                let k = (y as usize * side + x as usize) * 4;
+                                if px[k + 3] == 0 {
+                                    px[k..k + 4].copy_from_slice(&drop_color);
+                                }
+                            }
                         }
                     }
                 }

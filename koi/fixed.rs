@@ -167,5 +167,19 @@ fn main() {
             KoiFrame::from_rgba_pixels(px.chunks(4).map(|c| [c[0], c[1], c[2], c[3]]).collect())
         })
         .collect();
-    std::fs::write("koi-white.gif", encode_gif(&frames).unwrap()).unwrap();
+    let mut gif = encode_gif(&frames).unwrap();
+    // The encoder plays at 15 fps (6-7 hundredths per frame). Set every frame delay
+    // to SLOW_DELAY hundredths to slow the whole animation, fish and ripples alike.
+    const SLOW_DELAY: u16 = 10;
+    let mut at = 0;
+    while at + 8 <= gif.len() {
+        // a graphic control extension: 0x21 0xF9 0x04, flags, delay (2 bytes), transparent index, 0x00
+        if gif[at..at + 3] == [0x21, 0xF9, 0x04] && gif[at + 7] == 0 {
+            gif[at + 4..at + 6].copy_from_slice(&SLOW_DELAY.to_le_bytes());
+            at += 8;
+        } else {
+            at += 1;
+        }
+    }
+    std::fs::write("koi-white.gif", gif).unwrap();
 }

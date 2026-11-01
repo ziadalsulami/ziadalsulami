@@ -59,8 +59,8 @@ fn main() {
         .collect();
     // Ripples spawn under the koi every SPAWN_EVERY frames and widen for LIFE frames.
     // Indexing the spawn frame modulo the loop keeps the animation seamless.
-    const SPAWN_EVERY: usize = 4;
-    const LIFE: usize = 20;
+    const SPAWN_EVERY: usize = 7;
+    const LIFE: usize = 28;
     let ripple = [127u8, 183, 230, 255];
     let frames: Vec<KoiFrame> = (0..n as usize)
         .map(|i| {
@@ -68,7 +68,7 @@ fn main() {
             let mut age = 0;
             while age < LIFE {
                 let (cx, cy) = centers[(i + n as usize - age % n as usize) % n as usize];
-                let radius = 4.0 + age as f64 * 0.9;
+                let radius = 10.0 + age as f64 * 2.2;
                 // Past two thirds of its life, a ripple thins to a dither.
                 let sparse = age * 3 > LIFE * 2;
                 let r = radius.ceil() as i32 + 1;

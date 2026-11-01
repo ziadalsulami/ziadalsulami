@@ -61,7 +61,7 @@ fn main() {
         seed ^= seed << 17;
         lo + (seed % 10_000) as f64 / 10_000.0 * (hi - lo)
     };
-    const RIPPLE_COUNT: usize = 9;
+    const RIPPLE_COUNT: usize = 5;
     let ripples: Vec<Ripple> = (0..RIPPLE_COUNT)
         .map(|k| Ripple {
             x: rand(24.0, 232.0) as i32,
@@ -77,8 +77,8 @@ fn main() {
         .collect();
 
     let ripple_color = [127u8, 183, 230, 255];
-    let faint_color = [178u8, 213, 240, 255];
-    let drop_color = [96u8, 160, 222, 255];
+    let faint_color = ripple_color;
+    let drop_color = ripple_color;
     let frames: Vec<KoiFrame> = (0..n)
         .map(|i| {
             let mut px = base[i].clone();

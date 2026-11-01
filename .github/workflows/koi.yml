@@ -1,0 +1,23 @@
+﻿name: koi
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yalongwastaken/git-koi
+          path: git-koi
+      - run: cp koi/fixed.rs git-koi/examples/fixed.rs
+      - run: cd git-koi && cargo run --release --example fixed
+      - run: cp git-koi/koi-white.gif git-koi/koi-asagi.gif koi/
+      - run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add koi/*.gif
+          git commit -m "Render koi" || exit 0
+          git push

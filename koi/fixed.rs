@@ -37,25 +37,61 @@ fn main() {
     // Both koi on one canvas, half a lap apart, swimming the same circle.
     let b = Behavior::Cruise;
     let n = frame_count(b);
-    let pair: Vec<_> = (0..n)
-        .map(|i| {
-            let white = render_swim_frame(&development, KoiBody::White, b, i);
-            let asagi = render_swim_frame(&development, KoiBody::Asagi, b, i + n / 2);
-            let mut px = white.as_rgba_bytes().to_vec();
-            for (dst, src) in px.chunks_mut(4).zip(asagi.as_rgba_bytes().chunks(4)) {
-                if src[3] != 0 {
-                    dst.copy_from_slice(src);
+    let _ = n;
+    let side = 256usize;
+    let base: Vec<Vec<u8>> = (0..n)
+        .map(|i| render_swim_frame(&development, KoiBody::White, b, i).as_rgba_bytes().to_vec())
+        .collect();
+    // Where each frame's koi is: the centroid of its opaque pixels.
+    let centers: Vec<(f64, f64)> = base
+        .iter()
+        .map(|px| {
+            let (mut sx, mut sy, mut c) = (0.0, 0.0, 0.0);
+            for (k, p) in px.chunks(4).enumerate() {
+                if p[3] != 0 {
+                    sx += (k % side) as f64;
+                    sy += (k / side) as f64;
+                    c += 1.0;
                 }
+            }
+            (sx / c, sy / c)
+        })
+        .collect();
+    // Ripples spawn under the koi every SPAWN_EVERY frames and widen for LIFE frames.
+    // Indexing the spawn frame modulo the loop keeps the animation seamless.
+    const SPAWN_EVERY: usize = 4;
+    const LIFE: usize = 20;
+    let ripple = [127u8, 183, 230, 255];
+    let frames: Vec<KoiFrame> = (0..n as usize)
+        .map(|i| {
+            let mut px = base[i].clone();
+            let mut age = 0;
+            while age < LIFE {
+                let (cx, cy) = centers[(i + n as usize - age % n as usize) % n as usize];
+                let radius = 4.0 + age as f64 * 0.9;
+                // Past two thirds of its life, a ripple thins to a dither.
+                let sparse = age * 3 > LIFE * 2;
+                let r = radius.ceil() as i32 + 1;
+                for dy in -r..=r {
+                    for dx in -r..=r {
+                        let (x, y) = (cx.round() as i32 + dx, cy.round() as i32 + dy);
+                        if x < 0 || y < 0 || x >= side as i32 || y >= side as i32 {
+                            continue;
+                        }
+                        let dist = ((dx * dx + dy * dy) as f64).sqrt();
+                        if (dist - radius).abs() > 0.55 || (sparse && (x + y) % 2 == 0) {
+                            continue;
+                        }
+                        let k = (y as usize * side + x as usize) * 4;
+                        if px[k + 3] == 0 {
+                            px[k..k + 4].copy_from_slice(&ripple);
+                        }
+                    }
+                }
+                age += SPAWN_EVERY;
             }
             KoiFrame::from_rgba_pixels(px.chunks(4).map(|c| [c[0], c[1], c[2], c[3]]).collect())
         })
         .collect();
-    std::fs::write("koi-pair.gif", encode_gif(&pair).unwrap()).unwrap();
-    for (name, body) in [("white", KoiBody::White), ("asagi", KoiBody::Asagi)] {
-        let b = Behavior::Cruise;
-        let frames: Vec<_> = (0..frame_count(b))
-            .map(|i| render_swim_frame(&development, body, b, i))
-            .collect();
-        std::fs::write(format!("koi-{name}.gif"), encode_gif(&frames).unwrap()).unwrap();
-    }
+    std::fs::write("koi-white.gif", encode_gif(&frames).unwrap()).unwrap();
 }

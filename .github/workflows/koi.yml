@@ -15,10 +15,11 @@ jobs:
       - run: cp koi/fixed.rs git-koi/examples/fixed.rs
       - run: perl -0pi -e 's/#\[cfg\(test\)\]\n(\s*)pub\(crate\) fn from_rgba_pixels/$1pub fn from_rgba_pixels/' git-koi/src/render.rs
       - run: cd git-koi && cargo run --release --example fixed
-      - run: cp git-koi/koi-white.gif git-koi/koi-asagi.gif git-koi/koi-pair.gif koi/
+      - run: cp git-koi/koi-white.gif koi/
       - run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add koi/*.gif
           git commit -m "Render koi" || exit 0
           git push
+

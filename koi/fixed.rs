@@ -8,6 +8,14 @@ use git_koi::motion::frame_count;
 use git_koi::output::encode_gif;
 use git_koi::render::{render_swim_frame, KoiFrame};
 
+struct Ripple {
+    x: i32,
+    y: i32,
+    start: usize,
+    life: usize,
+    max_radius: f64,
+}
+
 fn main() {
     // (name, share, color) -- edit these to recolor the fish
     let langs = [
@@ -34,61 +42,74 @@ fn main() {
             observation_week_contributions: vec![],
         },
     };
-    // Both koi on one canvas, half a lap apart, swimming the same circle.
     let b = Behavior::Cruise;
-    let n = frame_count(b);
-    let _ = n;
+    let n = frame_count(b) as usize;
     let side = 256usize;
     let base: Vec<Vec<u8>> = (0..n)
-        .map(|i| render_swim_frame(&development, KoiBody::White, b, i).as_rgba_bytes().to_vec())
+        .map(|i| render_swim_frame(&development, KoiBody::White, b, i as u32).as_rgba_bytes().to_vec())
         .collect();
-    // Where each frame's koi is: the centroid of its opaque pixels.
-    let centers: Vec<(f64, f64)> = base
-        .iter()
-        .map(|px| {
-            let (mut sx, mut sy, mut c) = (0.0, 0.0, 0.0);
-            for (k, p) in px.chunks(4).enumerate() {
-                if p[3] != 0 {
-                    sx += (k % side) as f64;
-                    sy += (k / side) as f64;
-                    c += 1.0;
-                }
-            }
-            (sx / c, sy / c)
+
+    // Ripples appear at random spots, widen to a random size, and fade away. They
+    // are independent of the koi. Each has a start frame and wraps modulo the loop,
+    // so the animation is seamless. A fixed seed keeps the result the same each run.
+    let mut seed: u64 = 0x2545F4914F6CDD1D;
+    let mut rand = move |lo: f64, hi: f64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        lo + (seed % 10_000) as f64 / 10_000.0 * (hi - lo)
+    };
+    const RIPPLE_COUNT: usize = 9;
+    let ripples: Vec<Ripple> = (0..RIPPLE_COUNT)
+        .map(|k| Ripple {
+            x: rand(24.0, 232.0) as i32,
+            y: rand(24.0, 232.0) as i32,
+            // spread the start times so ripples overlap in time but never all at once
+            start: (k * n / RIPPLE_COUNT + rand(0.0, 6.0) as usize) % n,
+            life: rand(22.0, 40.0) as usize,
+            max_radius: rand(9.0, 30.0),
         })
         .collect();
-    // Ripples spawn under the koi every SPAWN_EVERY frames and widen for LIFE frames.
-    // Indexing the spawn frame modulo the loop keeps the animation seamless.
-    const SPAWN_EVERY: usize = 7;
-    const LIFE: usize = 28;
-    let ripple = [127u8, 183, 230, 255];
-    let frames: Vec<KoiFrame> = (0..n as usize)
+
+    let ripple_color = [127u8, 183, 230, 255];
+    let frames: Vec<KoiFrame> = (0..n)
         .map(|i| {
             let mut px = base[i].clone();
-            let mut age = 0;
-            while age < LIFE {
-                let (cx, cy) = centers[(i + n as usize - age % n as usize) % n as usize];
-                let radius = 10.0 + age as f64 * 2.2;
-                // Past two thirds of its life, a ripple thins to a dither.
-                let sparse = age * 3 > LIFE * 2;
+            for ripple in &ripples {
+                let age = (i + n - ripple.start) % n;
+                if age >= ripple.life {
+                    continue;
+                }
+                let t = age as f64 / ripple.life as f64;
+                // fast at first, then slowing as it spreads
+                let radius = 1.0 + ripple.max_radius * (1.0 - (1.0 - t) * (1.0 - t));
+                // the first half stays solid, then it thins to a dither and vanishes
+                let density = if t < 0.5 { 0 } else if t < 0.75 { 1 } else { 2 };
                 let r = radius.ceil() as i32 + 1;
                 for dy in -r..=r {
                     for dx in -r..=r {
-                        let (x, y) = (cx.round() as i32 + dx, cy.round() as i32 + dy);
+                        let (x, y) = (ripple.x + dx, ripple.y + dy);
                         if x < 0 || y < 0 || x >= side as i32 || y >= side as i32 {
                             continue;
                         }
                         let dist = ((dx * dx + dy * dy) as f64).sqrt();
-                        if (dist - radius).abs() > 0.55 || (sparse && (x + y) % 2 == 0) {
+                        if (dist - radius).abs() > 0.55 {
+                            continue;
+                        }
+                        let keep = match density {
+                            0 => true,
+                            1 => (x + y) % 2 == 0,
+                            _ => (x % 2 == 0) && (y % 2 == 0),
+                        };
+                        if !keep {
                             continue;
                         }
                         let k = (y as usize * side + x as usize) * 4;
                         if px[k + 3] == 0 {
-                            px[k..k + 4].copy_from_slice(&ripple);
+                            px[k..k + 4].copy_from_slice(&ripple_color);
                         }
                     }
                 }
-                age += SPAWN_EVERY;
             }
             KoiFrame::from_rgba_pixels(px.chunks(4).map(|c| [c[0], c[1], c[2], c[3]]).collect())
         })

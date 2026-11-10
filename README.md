@@ -1,1 +1,1 @@
-CS at IMSIU | AI, ML, NLP, Post Training 
+CS at IMSIU | AI
